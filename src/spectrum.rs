@@ -75,6 +75,14 @@ where
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        let res = self.inner.try_seek(pos);
+        if res.is_ok() {
+            self.buf.lock().unwrap().clear();
+            self.frame_pos = 0;
+        }
+        res
+    }
 }
 
 pub fn compute_bars(buf: &SharedSamples, n_bars: usize) -> Vec<f32> {
@@ -105,7 +113,7 @@ pub fn compute_bars(buf: &SharedSamples, n_bars: usize) -> Vec<f32> {
 
     let bins = FFT_SIZE / 2;
     let mut bars = vec![0.0f32; n_bars];
-    for b in 0..n_bars {
+    for (b, bar) in bars.iter_mut().enumerate() {
         let lo = ((b as f32 / n_bars as f32).powf(2.2) * bins as f32) as usize;
         let hi = (((b + 1) as f32 / n_bars as f32).powf(2.2) * bins as f32) as usize;
         let hi = hi.max(lo + 1).min(bins);
@@ -114,7 +122,7 @@ pub fn compute_bars(buf: &SharedSamples, n_bars: usize) -> Vec<f32> {
             peak = peak.max(bin.norm());
         }
         let db = (peak + 1e-6).log10();
-        bars[b] = ((db + 3.0) / 4.0).clamp(0.0, 1.0);
+        *bar = ((db + 3.0) / 4.0).clamp(0.0, 1.0);
     }
     bars
 }

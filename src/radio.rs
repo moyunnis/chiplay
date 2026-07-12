@@ -4,27 +4,44 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
 
+const KEEP_BEHIND: usize = 262144;
+const PREBUFFER: usize = 65536;
+
+struct RingData {
+    buf: Vec<u8>,
+    base: usize,
+}
+
 struct StreamBuffer {
-    data: Arc<Mutex<Vec<u8>>>,
+    data: Arc<Mutex<RingData>>,
     pos: usize,
     finished: Arc<AtomicBool>,
 }
 
 impl Read for StreamBuffer {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
         for _ in 0..500 {
-            let data = self.data.lock().unwrap();
-            if self.pos < data.len() {
-                let available = &data[self.pos..];
-                let to_read = buf.len().min(available.len());
-                buf[..to_read].copy_from_slice(&available[..to_read]);
-                self.pos += to_read;
-                return Ok(to_read);
+            {
+                let mut ring = self.data.lock().unwrap();
+                let rel = self.pos.saturating_sub(ring.base);
+                if rel < ring.buf.len() {
+                    let available = &ring.buf[rel..];
+                    let n = out.len().min(available.len());
+                    out[..n].copy_from_slice(&available[..n]);
+                    self.pos += n;
+
+                    let consumed = self.pos - ring.base;
+                    if consumed > KEEP_BEHIND {
+                        let drop = consumed - KEEP_BEHIND;
+                        ring.buf.drain(0..drop);
+                        ring.base += drop;
+                    }
+                    return Ok(n);
+                }
             }
             if self.finished.load(Ordering::SeqCst) {
                 return Ok(0);
             }
-            drop(data);
             thread::sleep(Duration::from_millis(20));
         }
         Ok(0)
@@ -33,13 +50,14 @@ impl Read for StreamBuffer {
 
 impl Seek for StreamBuffer {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let len = self.data.lock().unwrap().len() as i64;
+        let ring = self.data.lock().unwrap();
+        let end = (ring.base + ring.buf.len()) as i64;
         let new_pos = match pos {
             SeekFrom::Start(p) => p as i64,
             SeekFrom::Current(p) => self.pos as i64 + p,
-            SeekFrom::End(p) => len + p,
+            SeekFrom::End(p) => end + p,
         };
-        self.pos = new_pos.max(0) as usize;
+        self.pos = new_pos.max(ring.base as i64) as usize;
         Ok(self.pos as u64)
     }
 }
@@ -80,8 +98,8 @@ impl RadioPlayer {
 
         let response = client
             .get(url)
-            .header("Icy-MetaData", "1")
-            .header("User-Agent", "chiplay/0.2")
+            .header("Icy-MetaData", "0")
+            .header("User-Agent", "chiplay/1.0")
             .send()
             .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -89,10 +107,13 @@ impl RadioPlayer {
             return Err(format!("HTTP {}", response.status()));
         }
 
-        let shared_buf = Arc::new(Mutex::new(Vec::with_capacity(262144)));
+        let ring = Arc::new(Mutex::new(RingData {
+            buf: Vec::with_capacity(PREBUFFER * 2),
+            base: 0,
+        }));
         let finished = Arc::new(AtomicBool::new(false));
 
-        let buf_writer = shared_buf.clone();
+        let ring_writer = ring.clone();
         let fin_writer = finished.clone();
         let stop_writer = self.stop_flag.clone();
 
@@ -105,7 +126,7 @@ impl RadioPlayer {
                 }
                 match reader.read(&mut chunk) {
                     Ok(0) => break,
-                    Ok(n) => buf_writer.lock().unwrap().extend_from_slice(&chunk[..n]),
+                    Ok(n) => ring_writer.lock().unwrap().buf.extend_from_slice(&chunk[..n]),
                     Err(_) => break,
                 }
             }
@@ -113,7 +134,7 @@ impl RadioPlayer {
         });
 
         loop {
-            if shared_buf.lock().unwrap().len() >= 65536 {
+            if ring.lock().unwrap().buf.len() >= PREBUFFER {
                 break;
             }
             if finished.load(Ordering::SeqCst) {
@@ -123,7 +144,7 @@ impl RadioPlayer {
         }
 
         let stream_reader = StreamBuffer {
-            data: shared_buf,
+            data: ring,
             pos: 0,
             finished,
         };
