@@ -81,8 +81,8 @@ pub fn draw(
 
     match app.tab {
         Tab::Tracks => {
-            let items: Vec<ListItem> = app.tracks.iter().enumerate().map(|(i, path)| {
-                let name = path.file_stem().unwrap_or_default().to_string_lossy();
+            let items: Vec<ListItem> = app.filtered.iter().map(|&i| {
+                let track = &app.tracks[i];
                 let is_playing = app.playing_index == Some(i) && !app.radio_playing;
                 let prefix = if is_playing { "♪ " } else { "  " };
                 let style = if is_playing {
@@ -90,17 +90,22 @@ pub fn draw(
                 } else {
                     Style::default().fg(Color::White)
                 };
-                ListItem::new(format!("{}{}", prefix, name)).style(style)
+                ListItem::new(format!("{}{}", prefix, track.display())).style(style)
             }).collect();
 
+            let title = if app.query.is_empty() {
+                format!(" Tracks ({}) ", app.tracks.len())
+            } else {
+                format!(" Tracks ({}/{}) ", app.filtered.len(), app.tracks.len())
+            };
             let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(" Tracks ({}) ", app.tracks.len())))
+                .block(Block::default().borders(Borders::ALL).title(title))
                 .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▸ ");
 
             let mut state = ListState::default();
-            if !app.tracks.is_empty() {
-                state.select(Some(app.cursor.min(app.tracks.len() - 1)));
+            if !app.filtered.is_empty() {
+                state.select(Some(app.cursor.min(app.filtered.len() - 1)));
             }
             frame.render_stateful_widget(list, chunks[2], &mut state);
         }
@@ -129,20 +134,30 @@ pub fn draw(
         }
     }
 
-    let shuffle_str = if app.shuffle { "ON" } else { "OFF" };
-    let repeat_str = app.repeat.label();
-    let status = if let Some(msg) = &app.status_message {
+    // Status bar: search prompt takes priority, then transient message, then mode flags.
+    let status = if app.search_mode {
+        format!("Search: {}▏", app.query)
+    } else if let Some(msg) = &app.status_message {
         msg.clone()
     } else {
-        format!("Shuffle: {}  |  Repeat: {}", shuffle_str, repeat_str)
+        let shuffle_str = if app.shuffle { "ON" } else { "OFF" };
+        format!("Shuffle: {}  |  Repeat: {}", shuffle_str, app.repeat.label())
+    };
+    let status_style = if app.search_mode {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::Gray)
     };
     let status_bar = Paragraph::new(status)
         .block(Block::default().borders(Borders::ALL))
-        .style(Style::default().fg(Color::Gray));
+        .style(status_style);
     frame.render_widget(status_bar, chunks[3]);
 
-    let help = " Space:play/pause  n/p:next/prev  +/-:vol  ←/→:seek  s:shuffle  r:repeat  Tab:switch  Enter:play  q:quit ";
-    let help_bar = Paragraph::new(help)
-        .style(Style::default().fg(Color::DarkGray));
+    let help = if app.search_mode {
+        " Type to filter   Enter:apply   Esc:cancel "
+    } else {
+        " Space:play  Enter:select  n/p:next/prev  +/-:vol  ←/→:seek  /:search  s:shuffle  r:repeat  Tab:switch  q:quit "
+    };
+    let help_bar = Paragraph::new(help).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help_bar, chunks[4]);
 }

@@ -21,6 +21,9 @@ Play your local library or tune into online stations, all from a keyboard-driven
 ## Features
 
 - 🎵 **Local playback** — MP3, FLAC, OGG, WAV, M4A, AAC
+- 🏷️ **Tag reading** — shows `Artist — Title` from ID3/Vorbis tags (falls back to filename)
+- 📂 **Recursive scan** — walks subdirectories, so `chiplay ~/Music` finds everything
+- 🔎 **Live search** — press `/` to filter the track list as you type
 - 📻 **Internet radio** — built-in stations + your own custom streams
 - ⌨️ **Keyboard-driven TUI** — progress bar, volume meter, track list
 - 🔀 **Shuffle & repeat** — off / one / all
@@ -71,8 +74,11 @@ chiplay --radio-url URL # play a custom stream immediately
 | `←` / `→` (`h`/`l`) | Seek −5s / +5s         |
 | `s`           | Toggle shuffle               |
 | `r`           | Cycle repeat (off/one/all)   |
+| `/`           | Search / filter tracks       |
 | `Tab`         | Switch Tracks ↔ Radio        |
 | `q` / `Esc`   | Quit                         |
+
+While searching: type to filter, `Enter` to keep the filter, `Esc` to clear it.
 
 ## Custom radio stations
 
@@ -92,7 +98,7 @@ They appear in the Radio tab alongside the built-ins.
 
 ## Built with
 
-[ratatui](https://github.com/ratatui/ratatui) · [rodio](https://github.com/RustAudio/rodio) · [symphonia](https://github.com/pdeljanov/Symphonia) · [crossterm](https://github.com/crossterm-rs/crossterm) · [reqwest](https://github.com/seanmonstar/reqwest) · [clap](https://github.com/clap-rs/clap)
+[ratatui](https://github.com/ratatui/ratatui) · [rodio](https://github.com/RustAudio/rodio) · [symphonia](https://github.com/pdeljanov/Symphonia) · [lofty](https://github.com/Serial-ATA/lofty-rs) · [crossterm](https://github.com/crossterm-rs/crossterm) · [reqwest](https://github.com/seanmonstar/reqwest) · [clap](https://github.com/clap-rs/clap)
 
 ## License
 

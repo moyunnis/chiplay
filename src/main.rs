@@ -3,6 +3,7 @@ mod events;
 mod player;
 mod radio;
 mod stations;
+mod track;
 mod ui;
 
 use app::{App, RepeatMode, Tab};
@@ -15,6 +16,7 @@ use ratatui::prelude::*;
 use stations::builtin_stations;
 use std::io;
 use std::path::PathBuf;
+use track::Track;
 
 #[derive(Parser)]
 #[command(
@@ -35,37 +37,40 @@ struct Cli {
     radio_url: Option<String>,
 }
 
-fn scan_audio_files(paths: &[PathBuf]) -> Vec<PathBuf> {
-    let extensions = ["mp3", "flac", "ogg", "wav", "m4a", "aac"];
-    let is_audio = |p: &PathBuf| {
-        p.extension()
-            .map(|ext| extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()))
-            .unwrap_or(false)
-    };
+const AUDIO_EXTS: &[&str] = &["mp3", "flac", "ogg", "wav", "m4a", "aac"];
 
-    let mut result = Vec::new();
+fn is_audio(p: &std::path::Path) -> bool {
+    p.extension()
+        .map(|ext| AUDIO_EXTS.contains(&ext.to_string_lossy().to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Recursively collect audio files under the given paths, sorted.
+fn collect_paths(paths: &[PathBuf], out: &mut Vec<PathBuf>) {
     for path in paths {
         if path.is_file() {
             if is_audio(path) {
-                result.push(path.clone());
+                out.push(path.clone());
             }
         } else if path.is_dir() {
             if let Ok(entries) = std::fs::read_dir(path) {
-                let mut files: Vec<PathBuf> = entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| p.is_file() && is_audio(p))
-                    .collect();
-                files.sort();
-                result.extend(files);
+                let mut children: Vec<PathBuf> =
+                    entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+                children.sort();
+                collect_paths(&children, out);
             }
         }
     }
-    result
+}
+
+fn scan_tracks(paths: &[PathBuf]) -> Vec<Track> {
+    let mut files = Vec::new();
+    collect_paths(paths, &mut files);
+    files.into_iter().map(Track::from_path).collect()
 }
 
 fn load_track(app: &mut App, player: &mut Player, radio_player: &mut RadioPlayer) {
-    if let Some(path) = app.playing_track().cloned() {
+    if let Some(path) = app.playing_path() {
         radio_player.stop();
         app.radio_playing = false;
         if let Err(e) = player.load(&path) {
@@ -89,9 +94,9 @@ fn main() -> io::Result<()> {
     let cli = Cli::parse();
 
     let tracks = if cli.paths.is_empty() && cli.radio_url.is_none() && !cli.radio {
-        scan_audio_files(&[PathBuf::from(".")])
+        scan_tracks(&[PathBuf::from(".")])
     } else {
-        scan_audio_files(&cli.paths)
+        scan_tracks(&cli.paths)
     };
 
     let mut app = App::new(tracks);
@@ -143,8 +148,21 @@ fn run(
     while app.running {
         terminal.draw(|f| ui::draw(f, app, player, radio_player, stations))?;
 
-        match poll_event() {
+        match poll_event(app.search_mode) {
             AppEvent::Quit => app.running = false,
+
+            // --- search mode ---
+            AppEvent::StartSearch => {
+                if app.tab == Tab::Tracks {
+                    app.start_search();
+                }
+            }
+            AppEvent::SearchChar(c) => app.push_query(c),
+            AppEvent::SearchBackspace => app.pop_query(),
+            AppEvent::SearchConfirm => app.end_search(false),
+            AppEvent::SearchCancel => app.end_search(true),
+
+            // --- playback ---
             AppEvent::TogglePause => {
                 if app.radio_playing {
                     radio_player.toggle_pause();
@@ -153,13 +171,13 @@ fn run(
                 }
             }
             AppEvent::NextTrack => {
-                if !app.tracks.is_empty() {
+                if !app.filtered.is_empty() {
                     app.advance_track();
                     load_track(app, player, radio_player);
                 }
             }
             AppEvent::PrevTrack => {
-                if !app.tracks.is_empty() {
+                if !app.filtered.is_empty() {
                     app.retreat_track();
                     load_track(app, player, radio_player);
                 }
@@ -221,21 +239,20 @@ fn run(
         if !app.radio_playing && player.is_empty() && app.playing_index.is_some() {
             match app.repeat {
                 RepeatMode::One => {
-                    if let Some(path) = app.playing_track().cloned() {
+                    if let Some(path) = app.playing_path() {
                         let _ = player.load(&path);
                     }
                 }
                 RepeatMode::All => {
                     app.advance_track();
-                    if let Some(path) = app.playing_track().cloned() {
+                    if let Some(path) = app.playing_path() {
                         let _ = player.load(&path);
                     }
                 }
                 RepeatMode::Off => {
-                    let idx = app.playing_index.unwrap_or(0);
-                    if idx + 1 < app.tracks.len() {
+                    if app.has_next() {
                         app.advance_track();
-                        if let Some(path) = app.playing_track().cloned() {
+                        if let Some(path) = app.playing_path() {
                             let _ = player.load(&path);
                         }
                     } else {

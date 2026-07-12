@@ -1,6 +1,6 @@
 [package]
 name = "chiplay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "A fast CLI music player with a TUI and internet radio"
 license = "MIT"
@@ -16,6 +16,7 @@ rodio = { version = "0.20", features = ["symphonia-all"] }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", features = ["blocking", "stream"] }
 rand = "0.8"
+lofty = "0.22"
 
 [profile.release]
 opt-level = 3

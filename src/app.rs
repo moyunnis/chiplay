@@ -1,3 +1,4 @@
+use crate::track::Track;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -32,8 +33,12 @@ pub enum Tab {
 }
 
 pub struct App {
-    pub tracks: Vec<PathBuf>,
+    pub tracks: Vec<Track>,
+    /// Indices into `tracks` currently visible (after search filtering).
+    pub filtered: Vec<usize>,
+    /// Cursor position within `filtered`.
     pub cursor: usize,
+    /// Absolute index into `tracks` of the playing song.
     pub playing_index: Option<usize>,
     pub shuffle: bool,
     pub repeat: RepeatMode,
@@ -41,13 +46,17 @@ pub struct App {
     pub radio_index: usize,
     pub running: bool,
     pub radio_playing: bool,
+    pub search_mode: bool,
+    pub query: String,
     pub status_message: Option<String>,
 }
 
 impl App {
-    pub fn new(tracks: Vec<PathBuf>) -> Self {
+    pub fn new(tracks: Vec<Track>) -> Self {
+        let filtered = (0..tracks.len()).collect();
         App {
             tracks,
+            filtered,
             cursor: 0,
             playing_index: None,
             shuffle: false,
@@ -56,57 +65,92 @@ impl App {
             radio_index: 0,
             running: true,
             radio_playing: false,
+            search_mode: false,
+            query: String::new(),
             status_message: None,
         }
     }
 
-    pub fn playing_track(&self) -> Option<&PathBuf> {
+    pub fn playing_track(&self) -> Option<&Track> {
         self.playing_index.and_then(|i| self.tracks.get(i))
+    }
+
+    pub fn playing_path(&self) -> Option<PathBuf> {
+        self.playing_track().map(|t| t.path.clone())
     }
 
     pub fn playing_name(&self) -> String {
         self.playing_track()
-            .map(|p| {
-                p.file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            })
+            .map(|t| t.display())
             .unwrap_or_else(|| "No track".to_string())
     }
 
+    /// Recompute the visible list from the current query and keep the cursor valid.
+    pub fn apply_filter(&mut self) {
+        if self.query.is_empty() {
+            self.filtered = (0..self.tracks.len()).collect();
+        } else {
+            let q = self.query.to_lowercase();
+            self.filtered = self
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.display().to_lowercase().contains(&q))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        if self.cursor >= self.filtered.len() {
+            self.cursor = self.filtered.len().saturating_sub(1);
+        }
+    }
+
+    /// Position of the playing track within the filtered list, if present.
+    fn playing_pos(&self) -> Option<usize> {
+        let pi = self.playing_index?;
+        self.filtered.iter().position(|&x| x == pi)
+    }
+
     pub fn advance_track(&mut self) {
-        if self.tracks.is_empty() {
+        if self.filtered.is_empty() {
             return;
         }
-        let current = self.playing_index.unwrap_or(0);
         let next = if self.shuffle {
             use rand::Rng;
-            rand::thread_rng().gen_range(0..self.tracks.len())
+            rand::thread_rng().gen_range(0..self.filtered.len())
         } else {
-            (current + 1) % self.tracks.len()
+            match self.playing_pos() {
+                Some(pos) => (pos + 1) % self.filtered.len(),
+                None => 0,
+            }
         };
-        self.playing_index = Some(next);
+        self.playing_index = Some(self.filtered[next]);
         self.cursor = next;
     }
 
     pub fn retreat_track(&mut self) {
-        if self.tracks.is_empty() {
+        if self.filtered.is_empty() {
             return;
         }
-        let current = self.playing_index.unwrap_or(0);
-        let prev = if current == 0 {
-            self.tracks.len() - 1
-        } else {
-            current - 1
+        let prev = match self.playing_pos() {
+            Some(0) => self.filtered.len() - 1,
+            Some(pos) => pos - 1,
+            None => 0,
         };
-        self.playing_index = Some(prev);
+        self.playing_index = Some(self.filtered[prev]);
         self.cursor = prev;
     }
 
+    /// Is there another track after the playing one (used for repeat=off auto-advance)?
+    pub fn has_next(&self) -> bool {
+        match self.playing_pos() {
+            Some(pos) => pos + 1 < self.filtered.len(),
+            None => false,
+        }
+    }
+
     pub fn play_at_cursor(&mut self) {
-        if self.cursor < self.tracks.len() {
-            self.playing_index = Some(self.cursor);
+        if let Some(&idx) = self.filtered.get(self.cursor) {
+            self.playing_index = Some(idx);
         }
     }
 
@@ -136,7 +180,7 @@ impl App {
     pub fn scroll_down(&mut self, max_radio: usize) {
         match self.tab {
             Tab::Tracks => {
-                if self.cursor + 1 < self.tracks.len() {
+                if self.cursor + 1 < self.filtered.len() {
                     self.cursor += 1;
                 }
             }
@@ -153,5 +197,28 @@ impl App {
             Tab::Tracks => Tab::Radio,
             Tab::Radio => Tab::Tracks,
         };
+    }
+
+    pub fn start_search(&mut self) {
+        self.search_mode = true;
+    }
+
+    pub fn push_query(&mut self, c: char) {
+        self.query.push(c);
+        self.apply_filter();
+    }
+
+    pub fn pop_query(&mut self) {
+        self.query.pop();
+        self.apply_filter();
+    }
+
+    /// Leave search mode; if `clear` is true the filter is dropped entirely.
+    pub fn end_search(&mut self, clear: bool) {
+        self.search_mode = false;
+        if clear {
+            self.query.clear();
+            self.apply_filter();
+        }
     }
 }
