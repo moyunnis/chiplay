@@ -9,7 +9,6 @@ pub struct Track {
 }
 
 impl Track {
-    /// Build a track, reading Artist/Title from tags and falling back to the file name.
     pub fn from_path(path: PathBuf) -> Self {
         let (title, artist) = read_tags(&path);
         let title = title.unwrap_or_else(|| filename_stem(&path));
@@ -20,7 +19,6 @@ impl Track {
         }
     }
 
-    /// Line shown in the track list and now-playing header.
     pub fn display(&self) -> String {
         match &self.artist {
             Some(a) if !a.is_empty() => format!("{} — {}", a, self.title),

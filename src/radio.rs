@@ -33,9 +33,7 @@ impl Read for StreamBuffer {
 
 impl Seek for StreamBuffer {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let data = self.data.lock().unwrap();
-        let len = data.len() as i64;
-        drop(data);
+        let len = self.data.lock().unwrap().len() as i64;
         let new_pos = match pos {
             SeekFrom::Start(p) => p as i64,
             SeekFrom::Current(p) => self.pos as i64 + p,
@@ -83,7 +81,7 @@ impl RadioPlayer {
         let response = client
             .get(url)
             .header("Icy-MetaData", "1")
-            .header("User-Agent", "chiplay/0.1")
+            .header("User-Agent", "chiplay/0.2")
             .send()
             .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -107,10 +105,7 @@ impl RadioPlayer {
                 }
                 match reader.read(&mut chunk) {
                     Ok(0) => break,
-                    Ok(n) => {
-                        let mut buf = buf_writer.lock().unwrap();
-                        buf.extend_from_slice(&chunk[..n]);
-                    }
+                    Ok(n) => buf_writer.lock().unwrap().extend_from_slice(&chunk[..n]),
                     Err(_) => break,
                 }
             }
@@ -118,8 +113,7 @@ impl RadioPlayer {
         });
 
         loop {
-            let len = shared_buf.lock().unwrap().len();
-            if len >= 65536 {
+            if shared_buf.lock().unwrap().len() >= 65536 {
                 break;
             }
             if finished.load(Ordering::SeqCst) {
@@ -134,8 +128,7 @@ impl RadioPlayer {
             finished,
         };
 
-        let source = Decoder::new(stream_reader)
-            .map_err(|e| format!("Decode error: {}", e))?;
+        let source = Decoder::new(stream_reader).map_err(|e| format!("Decode error: {}", e))?;
 
         let vol = self.sink.volume();
         self.sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -144,7 +137,6 @@ impl RadioPlayer {
 
         self.playing = true;
         self.station_name = name.to_string();
-
         Ok(())
     }
 

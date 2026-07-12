@@ -31,7 +31,6 @@ fn builtin() -> Vec<Station> {
     ]
 }
 
-/// Path to the user's custom stations file: ~/.config/chiplay/stations.txt
 pub fn config_path() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -39,9 +38,6 @@ pub fn config_path() -> Option<PathBuf> {
     Some(base.join("chiplay").join("stations.txt"))
 }
 
-/// Parse custom stations from the config file.
-/// Format, one per line: `Name | URL | Genre`  (Genre optional).
-/// Lines starting with `#` and blank lines are ignored.
 fn custom() -> Vec<Station> {
     let Some(path) = config_path() else {
         return Vec::new();

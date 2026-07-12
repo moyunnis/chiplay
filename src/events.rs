@@ -11,12 +11,13 @@ pub enum AppEvent {
     SeekBackward,
     ToggleShuffle,
     ToggleRepeat,
+    ToggleViz,
+    SavePlaylist,
     SwitchTab,
     Enter,
     ScrollUp,
     ScrollDown,
     StartSearch,
-    // Search-mode input
     SearchChar(char),
     SearchBackspace,
     SearchConfirm,
@@ -26,7 +27,7 @@ pub enum AppEvent {
 }
 
 pub fn poll_event(search_mode: bool) -> AppEvent {
-    if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+    if event::poll(Duration::from_millis(60)).unwrap_or(false) {
         if let Ok(Event::Key(key)) = event::read() {
             if key.kind == KeyEventKind::Release {
                 return AppEvent::None;
@@ -55,6 +56,8 @@ pub fn poll_event(search_mode: bool) -> AppEvent {
                 KeyCode::Right | KeyCode::Char('l') => AppEvent::SeekForward,
                 KeyCode::Char('s') => AppEvent::ToggleShuffle,
                 KeyCode::Char('r') => AppEvent::ToggleRepeat,
+                KeyCode::Char('v') => AppEvent::ToggleViz,
+                KeyCode::Char('w') => AppEvent::SavePlaylist,
                 KeyCode::Char('/') => AppEvent::StartSearch,
                 KeyCode::Tab => AppEvent::SwitchTab,
                 KeyCode::Enter => AppEvent::Enter,

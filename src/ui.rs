@@ -1,16 +1,17 @@
-use ratatui::prelude::*;
-use ratatui::widgets::*;
 use crate::app::{App, Tab};
 use crate::player::Player;
 use crate::radio::RadioPlayer;
+use crate::spectrum::SharedSamples;
 use crate::stations::Station;
+use ratatui::prelude::*;
+use ratatui::widgets::*;
 use std::time::Duration;
+
+const BAR_LEVELS: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
 fn format_duration(d: Duration) -> String {
     let secs = d.as_secs();
-    let m = secs / 60;
-    let s = secs % 60;
-    format!("{:02}:{:02}", m, s)
+    format!("{:02}:{:02}", secs / 60, secs % 60)
 }
 
 pub fn draw(
@@ -19,23 +20,36 @@ pub fn draw(
     player: &Player,
     radio: &RadioPlayer,
     stations: &[Station],
+    samples: &SharedSamples,
 ) {
+    let show_viz = app.show_viz && !app.radio_playing && !player.is_empty();
+    let viz_height = if show_viz { 8 } else { 0 };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Min(5),
+            Constraint::Length(viz_height),
+            Constraint::Min(4),
             Constraint::Length(3),
             Constraint::Length(1),
         ])
         .split(frame.area());
 
     let tabs = Tabs::new(vec!["♪ Tracks", "◉ Radio"])
-        .select(match app.tab { Tab::Tracks => 0, Tab::Radio => 1 })
+        .select(match app.tab {
+            Tab::Tracks => 0,
+            Tab::Radio => 1,
+        })
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::ALL).title(" chiplay ").title_style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" chiplay ")
+                .title_style(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        );
     frame.render_widget(tabs, chunks[0]);
 
     let (now_playing, pos, dur, paused) = if app.radio_playing && radio.playing {
@@ -46,25 +60,41 @@ pub fn draw(
         };
         (name, Duration::ZERO, None, radio.is_paused())
     } else {
-        (app.playing_name(), player.position(), player.duration(), player.is_paused())
+        (
+            app.playing_name(),
+            player.position(),
+            player.duration(),
+            player.is_paused(),
+        )
     };
 
     let status_icon = if paused { "⏸" } else { "▶" };
-    let vol = if app.radio_playing { radio.volume() } else { player.volume() };
+    let vol = if app.radio_playing {
+        radio.volume()
+    } else {
+        player.volume()
+    };
     let vol_pct = (vol * 100.0).round() as u32;
     let vol_bars = (vol * 10.0).round() as usize;
     let vol_str: String = "█".repeat(vol_bars) + &"░".repeat(10usize.saturating_sub(vol_bars));
 
     let progress_text = match dur {
-        Some(d) if d.as_secs() > 0 => {
-            format!("{} {} / {}  Vol [{}] {}%", status_icon, format_duration(pos), format_duration(d), vol_str, vol_pct)
-        }
-        _ if app.radio_playing => {
-            format!("{} LIVE  Vol [{}] {}%", status_icon, vol_str, vol_pct)
-        }
-        _ => {
-            format!("{} {}  Vol [{}] {}%", status_icon, format_duration(pos), vol_str, vol_pct)
-        }
+        Some(d) if d.as_secs() > 0 => format!(
+            "{} {} / {}  Vol [{}] {}%",
+            status_icon,
+            format_duration(pos),
+            format_duration(d),
+            vol_str,
+            vol_pct
+        ),
+        _ if app.radio_playing => format!("{} LIVE  Vol [{}] {}%", status_icon, vol_str, vol_pct),
+        _ => format!(
+            "{} {}  Vol [{}] {}%",
+            status_icon,
+            format_duration(pos),
+            vol_str,
+            vol_pct
+        ),
     };
 
     let progress_ratio = match dur {
@@ -73,25 +103,37 @@ pub fn draw(
     };
 
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title(format!(" {} ", now_playing)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {} ", now_playing)),
+        )
         .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
         .ratio(progress_ratio)
         .label(progress_text);
     frame.render_widget(gauge, chunks[1]);
 
+    if show_viz {
+        draw_spectrum(frame, chunks[2], samples, paused);
+    }
+
     match app.tab {
         Tab::Tracks => {
-            let items: Vec<ListItem> = app.filtered.iter().map(|&i| {
-                let track = &app.tracks[i];
-                let is_playing = app.playing_index == Some(i) && !app.radio_playing;
-                let prefix = if is_playing { "♪ " } else { "  " };
-                let style = if is_playing {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                ListItem::new(format!("{}{}", prefix, track.display())).style(style)
-            }).collect();
+            let items: Vec<ListItem> = app
+                .filtered
+                .iter()
+                .map(|&i| {
+                    let track = &app.tracks[i];
+                    let is_playing = app.playing_index == Some(i) && !app.radio_playing;
+                    let prefix = if is_playing { "♪ " } else { "  " };
+                    let style = if is_playing {
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    ListItem::new(format!("{}{}", prefix, track.display())).style(style)
+                })
+                .collect();
 
             let title = if app.query.is_empty() {
                 format!(" Tracks ({}) ", app.tracks.len())
@@ -100,41 +142,58 @@ pub fn draw(
             };
             let list = List::new(items)
                 .block(Block::default().borders(Borders::ALL).title(title))
-                .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .highlight_symbol("▸ ");
 
             let mut state = ListState::default();
             if !app.filtered.is_empty() {
                 state.select(Some(app.cursor.min(app.filtered.len() - 1)));
             }
-            frame.render_stateful_widget(list, chunks[2], &mut state);
+            frame.render_stateful_widget(list, chunks[3], &mut state);
         }
         Tab::Radio => {
-            let items: Vec<ListItem> = stations.iter().map(|s| {
-                let is_playing = app.radio_playing && radio.playing && radio.station_name == s.name;
-                let prefix = if is_playing { "♪ " } else { "  " };
-                let style = if is_playing {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                ListItem::new(format!("{}{} [{}]", prefix, s.name, s.genre)).style(style)
-            }).collect();
+            let items: Vec<ListItem> = stations
+                .iter()
+                .map(|s| {
+                    let is_playing =
+                        app.radio_playing && radio.playing && radio.station_name == s.name;
+                    let prefix = if is_playing { "♪ " } else { "  " };
+                    let style = if is_playing {
+                        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    ListItem::new(format!("{}{} [{}]", prefix, s.name, s.genre)).style(style)
+                })
+                .collect();
 
             let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(" Radio ({}) ", stations.len())))
-                .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(" Radio ({}) ", stations.len())),
+                )
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .highlight_symbol("▸ ");
 
             let mut state = ListState::default();
             if !stations.is_empty() {
                 state.select(Some(app.radio_index.min(stations.len() - 1)));
             }
-            frame.render_stateful_widget(list, chunks[2], &mut state);
+            frame.render_stateful_widget(list, chunks[3], &mut state);
         }
     }
 
-    // Status bar: search prompt takes priority, then transient message, then mode flags.
     let status = if app.search_mode {
         format!("Search: {}▏", app.query)
     } else if let Some(msg) = &app.status_message {
@@ -151,13 +210,54 @@ pub fn draw(
     let status_bar = Paragraph::new(status)
         .block(Block::default().borders(Borders::ALL))
         .style(status_style);
-    frame.render_widget(status_bar, chunks[3]);
+    frame.render_widget(status_bar, chunks[4]);
 
     let help = if app.search_mode {
         " Type to filter   Enter:apply   Esc:cancel "
     } else {
-        " Space:play  Enter:select  n/p:next/prev  +/-:vol  ←/→:seek  /:search  s:shuffle  r:repeat  Tab:switch  q:quit "
+        " Space:play  Enter:select  n/p:track  +/-:vol  ←/→:seek  /:search  s:shuffle  r:repeat  v:viz  w:save  Tab:switch  q:quit "
     };
     let help_bar = Paragraph::new(help).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(help_bar, chunks[4]);
+    frame.render_widget(help_bar, chunks[5]);
+}
+
+fn draw_spectrum(frame: &mut Frame, area: Rect, samples: &SharedSamples, paused: bool) {
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_height = area.height.saturating_sub(2) as usize;
+    if inner_width == 0 || inner_height == 0 {
+        frame.render_widget(Block::default().borders(Borders::ALL), area);
+        return;
+    }
+
+    let bars = if paused {
+        vec![0.0; inner_width]
+    } else {
+        crate::spectrum::compute_bars(samples, inner_width)
+    };
+
+    let mut lines: Vec<Line> = Vec::with_capacity(inner_height);
+    for row in 0..inner_height {
+        let row_from_bottom = inner_height - row;
+        let mut spans: Vec<Span> = Vec::with_capacity(inner_width);
+        for &level in bars.iter() {
+            let filled = level * inner_height as f32;
+            let cell = filled - (row_from_bottom - 1) as f32;
+            let idx = (cell.clamp(0.0, 1.0) * 8.0).round() as usize;
+            let color = match row_from_bottom * 3 / inner_height.max(1) {
+                0 => Color::Green,
+                1 => Color::Yellow,
+                _ => Color::Red,
+            };
+            spans.push(Span::styled(BAR_LEVELS[idx], Style::default().fg(color)));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    let viz = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Spectrum ")
+            .title_style(Style::default().fg(Color::DarkGray)),
+    );
+    frame.render_widget(viz, area);
 }

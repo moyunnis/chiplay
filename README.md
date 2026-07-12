@@ -1,38 +1,39 @@
 # chiplay
 
-A fast, lightweight CLI music player with a terminal UI and internet radio — written in Rust.
+Терминальный музыкальный плеер на Rust. Играет локальные файлы и интернет-радио,
+управляется с клавиатуры, показывает спектр и цепляется к медиа-клавишам.
 
-Play your local library or tune into online stations, all from a keyboard-driven TUI. No Electron, no browser, no bloat — a single ~4 MB binary.
+Один бинарник ~7 МБ, запускается мгновенно.
 
 ```
 ┌ chiplay ─────────────────────────────────────────────────────────────────────┐
 │ ♪ Tracks │ ◉ Radio                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
-┌ give yourself a break ───────────────────────────────────────────────────────┐
+┌ TaTa_Chan — give yourself a break ───────────────────────────────────────────┐
 │██████████            ▶ 01:12 / 03:15   Vol [█████░░░░░] 50%                   │
 └────────────────────────────────────────────────────────────────────────────┘
-┌ Tracks (14) ─────────────────────────────────────────────────────────────────┐
-│ ♪ give yourself a break                                                      │
-│ ▸ midnight drive                                                             │
-│   ocean floor                                                               │
+┌ Spectrum ────────────────────────────────────────────────────────────────────┐
+│      ▂▃      ▅▆▃                ▂▁                                            │
+│   ▃▅ ██▅  ▂▅███▇▄  ▃▂     ▂▄▃  ▄██▃                                          │
+│  ▅███████▇██████████▇▆▄▅▇█████▇████▆▃                                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## Что умеет
 
-- 🎵 **Local playback** — MP3, FLAC, OGG, WAV, M4A, AAC
-- 🏷️ **Tag reading** — shows `Artist — Title` from ID3/Vorbis tags (falls back to filename)
-- 📂 **Recursive scan** — walks subdirectories, so `chiplay ~/Music` finds everything
-- 🔎 **Live search** — press `/` to filter the track list as you type
-- 📻 **Internet radio** — built-in stations + your own custom streams
-- ⌨️ **Keyboard-driven TUI** — progress bar, volume meter, track list
-- 🔀 **Shuffle & repeat** — off / one / all
-- ⏩ **Seeking** — jump forward/back within a track
-- 🪶 **Tiny & fast** — single static binary, instant startup
+- Локальные файлы: MP3, FLAC, OGG, WAV, M4A, AAC
+- Читает теги (Artist — Title), если их нет — берёт имя файла
+- Спектр в реальном времени (FFT), включается на `v`
+- Управление с медиа-клавиш и десктопных виджетов через MPRIS
+- Рекурсивно обходит папки: `chiplay ~/Music` подхватит всё
+- Поиск по списку на `/`
+- Плейлисты `.m3u`: открывает и сохраняет
+- Интернет-радио: встроенные станции плюс свои
+- Shuffle, repeat (off/one/all), перемотка
 
-## Install
+## Установка
 
-### From source (requires [Rust](https://rustup.rs/))
+Нужен [Rust](https://rustup.rs/).
 
 ```bash
 git clone https://codeberg.org/moyunni/chiplay
@@ -40,66 +41,62 @@ cd chiplay
 cargo install --path .
 ```
 
-This installs `chiplay` to `~/.cargo/bin/`.
+Бинарник встанет в `~/.cargo/bin/`.
 
-### Linux dependencies
-
-chiplay uses ALSA for audio output. On Debian/Ubuntu:
-
-```bash
-sudo apt install libasound2-dev
-```
-
-On Arch Linux, ALSA is already part of `base`.
-
-## Usage
+На Linux нужны ALSA (звук) и D-Bus (медиа-клавиши). На Arch они уже есть.
+На Debian/Ubuntu:
 
 ```bash
-chiplay                 # play audio files in the current directory
-chiplay ~/Music         # play everything in a folder
-chiplay track.mp3       # play a single file
-chiplay --radio         # open the radio tab
-chiplay --radio-url URL # play a custom stream immediately
+sudo apt install libasound2-dev libdbus-1-dev
 ```
 
-## Controls
+## Запуск
 
-| Key           | Action                       |
-|---------------|------------------------------|
-| `Space`       | Play / pause                 |
-| `Enter`       | Play selected track/station  |
-| `↑` / `↓` (`k`/`j`) | Move selection         |
-| `n` / `p`     | Next / previous track        |
-| `+` / `-`     | Volume up / down             |
-| `←` / `→` (`h`/`l`) | Seek −5s / +5s         |
-| `s`           | Toggle shuffle               |
-| `r`           | Cycle repeat (off/one/all)   |
-| `/`           | Search / filter tracks       |
-| `Tab`         | Switch Tracks ↔ Radio        |
-| `q` / `Esc`   | Quit                         |
-
-While searching: type to filter, `Enter` to keep the filter, `Esc` to clear it.
-
-## Custom radio stations
-
-Add your own stations in `~/.config/chiplay/stations.txt`, one per line:
-
-```
-# Name | URL | Genre (genre is optional)
-My Station | https://example.com/stream.mp3 | Ambient
-Lo-Fi Beats | https://example.com/lofi.aac
+```bash
+chiplay                 # играть файлы из текущей папки
+chiplay ~/Music         # вся папка, рекурсивно
+chiplay track.mp3       # один файл
+chiplay playlist.m3u    # плейлист
+chiplay --radio         # открыть вкладку радио
+chiplay --radio-url URL # сразу играть свой поток
 ```
 
-They appear in the Radio tab alongside the built-ins.
+## Клавиши
 
-## Built-in stations
+| Клавиша            | Действие                        |
+|--------------------|---------------------------------|
+| `Space`            | пауза / играть                  |
+| `Enter`            | играть выбранное                |
+| `↑` `↓` / `k` `j`  | двигать курсор                  |
+| `n` / `p`          | следующий / предыдущий трек     |
+| `+` / `-`          | громкость                       |
+| `←` `→` / `h` `l`  | перемотка ∓5 сек                |
+| `s`                | shuffle                         |
+| `r`                | repeat: off → one → all         |
+| `v`                | спектр вкл/выкл                 |
+| `w`                | сохранить очередь в playlist.m3u|
+| `/`                | поиск                           |
+| `Tab`              | Tracks ↔ Radio                  |
+| `q` / `Esc`        | выход                           |
 
-Европа Плюс · Record · Русское Радио · DFM · Maximum · Наше Радио · Jazz FM · FIP (France) · Radio Paradise
+В поиске: печатаешь — фильтруется, `Enter` оставляет фильтр, `Esc` сбрасывает.
 
-## Built with
+## Свои радиостанции
 
-[ratatui](https://github.com/ratatui/ratatui) · [rodio](https://github.com/RustAudio/rodio) · [symphonia](https://github.com/pdeljanov/Symphonia) · [lofty](https://github.com/Serial-ATA/lofty-rs) · [crossterm](https://github.com/crossterm-rs/crossterm) · [reqwest](https://github.com/seanmonstar/reqwest) · [clap](https://github.com/clap-rs/clap)
+`~/.config/chiplay/stations.txt`, по одной на строку:
 
-## License
+```
+# Название | URL | Жанр (жанр необязателен)
+Моя станция | https://example.com/stream.mp3 | Ambient
+Lo-Fi | https://example.com/lofi.aac
+```
 
-MIT — see [LICENSE](LICENSE).
+Появятся во вкладке Radio рядом со встроенными.
+
+## Встроенные станции
+
+Европа Плюс · Record · Русское Радио · DFM · Maximum · Наше Радио · Jazz FM · FIP · Radio Paradise
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE).

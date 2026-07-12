@@ -34,11 +34,8 @@ pub enum Tab {
 
 pub struct App {
     pub tracks: Vec<Track>,
-    /// Indices into `tracks` currently visible (after search filtering).
     pub filtered: Vec<usize>,
-    /// Cursor position within `filtered`.
     pub cursor: usize,
-    /// Absolute index into `tracks` of the playing song.
     pub playing_index: Option<usize>,
     pub shuffle: bool,
     pub repeat: RepeatMode,
@@ -46,6 +43,7 @@ pub struct App {
     pub radio_index: usize,
     pub running: bool,
     pub radio_playing: bool,
+    pub show_viz: bool,
     pub search_mode: bool,
     pub query: String,
     pub status_message: Option<String>,
@@ -65,6 +63,7 @@ impl App {
             radio_index: 0,
             running: true,
             radio_playing: false,
+            show_viz: true,
             search_mode: false,
             query: String::new(),
             status_message: None,
@@ -85,7 +84,10 @@ impl App {
             .unwrap_or_else(|| "No track".to_string())
     }
 
-    /// Recompute the visible list from the current query and keep the cursor valid.
+    pub fn all_paths(&self) -> Vec<PathBuf> {
+        self.tracks.iter().map(|t| t.path.clone()).collect()
+    }
+
     pub fn apply_filter(&mut self) {
         if self.query.is_empty() {
             self.filtered = (0..self.tracks.len()).collect();
@@ -104,7 +106,6 @@ impl App {
         }
     }
 
-    /// Position of the playing track within the filtered list, if present.
     fn playing_pos(&self) -> Option<usize> {
         let pi = self.playing_index?;
         self.filtered.iter().position(|&x| x == pi)
@@ -140,7 +141,6 @@ impl App {
         self.cursor = prev;
     }
 
-    /// Is there another track after the playing one (used for repeat=off auto-advance)?
     pub fn has_next(&self) -> bool {
         match self.playing_pos() {
             Some(pos) => pos + 1 < self.filtered.len(),
@@ -160,6 +160,10 @@ impl App {
 
     pub fn toggle_repeat(&mut self) {
         self.repeat = self.repeat.next();
+    }
+
+    pub fn toggle_viz(&mut self) {
+        self.show_viz = !self.show_viz;
     }
 
     pub fn scroll_up(&mut self) {
@@ -213,7 +217,6 @@ impl App {
         self.apply_filter();
     }
 
-    /// Leave search mode; if `clear` is true the filter is dropped entirely.
     pub fn end_search(&mut self, clear: bool) {
         self.search_mode = false;
         if clear {

@@ -1,3 +1,5 @@
+use crate::spectrum::{self, SharedSamples, SpectrumTap};
+use rodio::source::SamplesConverter;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::io::BufReader;
@@ -5,11 +7,14 @@ use std::panic;
 use std::path::PathBuf;
 use std::time::Duration;
 
+type TrackSource = SpectrumTap<SamplesConverter<Decoder<BufReader<File>>, f32>>;
+
 pub struct Player {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     sink: Sink,
     duration: Option<Duration>,
+    samples: SharedSamples,
 }
 
 impl Player {
@@ -22,7 +27,12 @@ impl Player {
             handle,
             sink,
             duration: None,
+            samples: spectrum::shared(),
         }
+    }
+
+    pub fn samples(&self) -> SharedSamples {
+        self.samples.clone()
     }
 
     pub fn load(&mut self, path: &PathBuf) -> Result<(), String> {
@@ -30,21 +40,20 @@ impl Player {
         self.sink.stop();
         self.sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
         self.sink.set_volume(vol);
+        spectrum::clear(&self.samples);
 
         let file = File::open(path).map_err(|e| e.to_string())?;
         let reader = BufReader::new(file);
 
-        let decode_result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            Decoder::new(reader)
-        }));
-
-        let source = match decode_result {
+        let decode = panic::catch_unwind(panic::AssertUnwindSafe(|| Decoder::new(reader)));
+        let decoder = match decode {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => return Err(format!("Decode error: {}", e)),
             Err(_) => return Err("Unsupported format".to_string()),
         };
 
-        self.duration = source.total_duration();
+        self.duration = decoder.total_duration();
+        let source: TrackSource = spectrum::tap(decoder.convert_samples::<f32>(), self.samples.clone());
         self.sink.append(source);
         Ok(())
     }
@@ -57,12 +66,21 @@ impl Player {
         }
     }
 
+    pub fn play(&self) {
+        self.sink.play();
+    }
+
+    pub fn pause(&self) {
+        self.sink.pause();
+    }
+
     pub fn is_paused(&self) -> bool {
         self.sink.is_paused()
     }
 
     pub fn stop(&self) {
         self.sink.stop();
+        spectrum::clear(&self.samples);
     }
 
     pub fn is_empty(&self) -> bool {
