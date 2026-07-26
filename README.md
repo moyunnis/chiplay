@@ -22,7 +22,7 @@
 Нужен [Rust](https://rustup.rs/).
 
 ```bash
-git clone https://codeberg.org/moyunni/chiplay
+git clone https://github.com/moyunnis/chiplay
 cd chiplay
 cargo install --path .
 ```
