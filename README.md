@@ -27,6 +27,14 @@ cd chiplay
 cargo install --path .
 ```
 
+<details>
+   <summary>Я делаю так:</summary>
+
+   ```bash
+   sudo cargo install --path . --root /usr/local/
+   ```
+</details>
+
 Бинарник встанет в `~/.cargo/bin/`.
 
 На Linux нужны ALSA (звук) и D-Bus (медиа-клавиши). На Arch они уже есть.
